@@ -122,6 +122,12 @@
       </div>
     </div>
     <div class="card">
+      <h2>Fravær fra InSchool</h2>
+      <p class="meta" style="margin-top:-6px">Skriv inn tallet i kolonnen «UDOK. T. SKOLEÅR» under Fravær i InSchool. Fravær du registrerer her på siden <i>etter</i> datoen legges oppå.</p>
+      <div class="grid4" id="insGrid"></div>
+      <div class="grid4" style="margin-top:12px"><div><label>Hentet fra InSchool den</label><input type="date" id="insDato"></div></div>
+    </div>
+    <div class="card">
       <h2>Registrer fravær</h2>
       <div class="grid4">
         <div><label>Dato</label><input type="date" id="fDato"></div>
@@ -224,6 +230,8 @@ const DEFAULT = {
   ],
   // dag: 0=mandag ... 4=fredag
   fravaer: [],
+  // Udokumentert fravær (timer) slik det står i InSchool, «UDOK. T. SKOLEÅR»
+  inschool: {dato:"2026-11-18", timer:{eng:5.25, nat:1.5, mat:3, kro:0}},
   okter: [
     {dag:0, fra:"09:50", til:"10:35", fag:"mat", rom:"F103", laerer:"Mona Kristin Holte"},
     {dag:0, fra:"10:45", til:"11:30", fag:"eng", rom:"F103", laerer:"Frode Apeland"},
@@ -247,6 +255,7 @@ function load(){
   try{ const r = localStorage.getItem(KEY); if(r){ S = JSON.parse(r); } }catch(e){}
   if(!S) S = JSON.parse(JSON.stringify(DEFAULT));
   if(!Array.isArray(S.fravaer)) S.fravaer = [];
+  if(!S.inschool) S.inschool = JSON.parse(JSON.stringify(DEFAULT.inschool));
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 
@@ -299,7 +308,13 @@ function compute(){
   const dayFrac = days.length ? daysPast/days.length : 0;
 
   const fr = {}; for(const f of S.fag) fr[f.id] = {teller:0, unntatt:0};
-  for(const a of S.fravaer){ if(fr[a.fag]) fr[a.fag][a.type==="unntatt"?"unntatt":"teller"] += num(a.min); }
+  const ins = S.inschool || {dato:"", timer:{}};
+  for(const f of S.fag) fr[f.id].teller += num(ins.timer[f.id])*60;
+  for(const a of S.fravaer){
+    if(!fr[a.fag]) continue;
+    if(a.type !== "unntatt" && ins.dato && a.dato <= ins.dato) continue; // allerede med i InSchool-tallet
+    fr[a.fag][a.type==="unntatt"?"unntatt":"teller"] += num(a.min);
+  }
   const res = S.fag.map(f => {
     const p = per[f.id];
     const frac = p.tot ? p.done/p.tot : dayFrac;
@@ -381,6 +396,18 @@ function renderFrav(){
       <td>${statusTag(r.frav)}</td>`;
     sum.appendChild(tr);
   }
+  const g = document.getElementById("insGrid");
+  g.innerHTML = "";
+  for(const f of S.fag){
+    const w = document.createElement("div");
+    w.innerHTML = `<label>${esc(f.navn)} (timer)</label><input inputmode="decimal">`;
+    const inp = w.querySelector("input");
+    const v = S.inschool.timer[f.id];
+    inp.value = v ? String(v).replace(".", ",") : "0";
+    inp.onchange = e => { S.inschool.timer[f.id] = num(e.target.value); save(); renderFrav(); };
+    g.appendChild(w);
+  }
+  document.getElementById("insDato").value = S.inschool.dato || "";
   const sel = document.getElementById("fFag");
   const prev = sel.value;
   sel.innerHTML = `<option value="__dag">Hele dagen (alle timer)</option>` + S.fag.map(f=>`<option value="${esc(f.id)}">${esc(f.navn)}</option>`).join("");
@@ -397,7 +424,7 @@ function renderFrav(){
     const tr = document.createElement("tr");
     tr.innerHTML = `<td>${esc(parse(a.dato).toLocaleDateString("nb-NO",{weekday:"short", day:"numeric", month:"short"}))}</td>
       <td>${esc(f?f.navn:"(slettet fag)")}</td><td class="r">${fmt(num(a.min))}</td>
-      <td>${a.type==="unntatt"?"Unntatt":"Teller"}</td><td>${esc(a.kom||"")}</td>
+      <td>${a.type==="unntatt"?"Unntatt":(S.inschool.dato && a.dato <= S.inschool.dato ? '<span class="meta">Med i InSchool-tall</span>' : "Teller")}</td><td>${esc(a.kom||"")}</td>
       <td><button class="x" title="Fjern">×</button></td>`;
     tr.querySelector(".x").onclick = () => { S.fravaer.splice(i,1); save(); renderFrav(); };
     list.appendChild(tr);
@@ -510,6 +537,7 @@ document.querySelectorAll(".tabs button").forEach(b=> b.onclick = () => show(b.d
 document.getElementById("fFag").onchange = e => {
   document.getElementById("fMinWrap").style.visibility = e.target.value==="__dag" ? "hidden" : "visible";
 };
+document.getElementById("insDato").onchange = e => { S.inschool.dato = e.target.value; save(); renderFrav(); };
 document.getElementById("fAdd").onclick = () => {
   const dato = document.getElementById("fDato").value;
   const fag = document.getElementById("fFag").value;
