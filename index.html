@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Timer gått i fag</title>
+<style>
+  :root{
+    --bg:#f6f5f1; --card:#ffffff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e3e1da;
+    --accent:#2f6f5e; --accent2:#e9f2ee; --danger:#b4443a;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#161614; --card:#1f1f1d; --ink:#ecebe6; --muted:#a09e97; --line:#33322f; --accent:#6cc0a6; --accent2:#1f3530; --danger:#e07a6f; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  main{max-width:900px;margin:0 auto;padding:24px 16px 60px}
+  h1{font-size:26px;margin:0 0 4px}
+  h2{font-size:17px;margin:0 0 12px}
+  .sub{color:var(--muted);margin:0 0 20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+  .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .tabs button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:999px;cursor:pointer;font:inherit}
+  .tabs button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .subj{padding:14px 0;border-top:1px solid var(--line)}
+  .subj:first-child{border-top:0;padding-top:0}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  .name{font-weight:600;font-size:16px}
+  .pct{font-variant-numeric:tabular-nums;font-weight:700;font-size:22px}
+  .bar{height:12px;background:var(--accent2);border-radius:99px;overflow:hidden;margin:8px 0 6px}
+  .bar>div{height:100%;border-radius:99px;transition:width .4s}
+  .meta{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+  .big{display:flex;gap:24px;flex-wrap:wrap;margin-top:4px}
+  .big div{min-width:120px}
+  .big b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
+  .big span{color:var(--muted);font-size:13px}
+  .next{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:14px}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:4px}
+  input,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+  input[type=color]{padding:2px;height:36px;width:48px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:6px 4px;text-align:left;font-size:14px;vertical-align:middle}
+  th{color:var(--muted);font-weight:500;font-size:12px}
+  td input,td select{padding:6px 6px}
+  .num{width:76px;text-align:center}
+  .btn{border:1px solid var(--accent);background:transparent;color:var(--accent);border-radius:8px;padding:8px 14px;cursor:pointer;font:inherit}
+  .x{border:0;background:transparent;color:var(--danger);cursor:pointer;font-size:18px;padding:4px 8px}
+  .note{font-size:13px;color:var(--muted);margin-top:10px}
+  .scroll{overflow-x:auto}
+  .hidden{display:none}
+  /* ukevisning */
+  .week{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:10px}
+  .day h3{font-size:14px;margin:0 0 8px;color:var(--muted);font-weight:600}
+  .day.today h3{color:var(--accent)}
+  .lesson{border:1px solid var(--line);border-left:5px solid;border-radius:8px;padding:7px 9px;margin-bottom:8px;background:var(--bg)}
+  .lesson.done{opacity:.5}
+  .lesson b{display:block;font-size:14px}
+  .lesson small{display:block;color:var(--muted);font-size:12px}
+  .empty{color:var(--muted);font-size:13px;font-style:italic}
+  @media (max-width:560px){ .grid2{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<main>
+  <h1>Hvor mye av timene er gått?</h1>
+  <p class="sub" id="today"></p>
+
+  <div class="tabs">
+    <button data-tab="view" class="on">Oversikt</button>
+    <button data-tab="uke">Timeplan</button>
+    <button data-tab="okter">Rediger timeplan</button>
+    <button data-tab="fag">Fag</button>
+    <button data-tab="year">Skoleår og ferier</button>
+  </div>
+
+  <!-- OVERSIKT -->
+  <section id="view">
+    <div class="card">
+      <h2>Hele skoleåret</h2>
+      <div class="bar"><div id="yearBar" style="background:var(--accent)"></div></div>
+      <div class="big">
+        <div><b id="yearPct">–</b><span>av alle timer gått</span></div>
+        <div><b id="yearDone">–</b><span>timer gjennomført</span></div>
+        <div><b id="yearLeft">–</b><span>timer igjen</span></div>
+        <div><b id="daysLeft">–</b><span>skoledager igjen</span></div>
+      </div>
+      <div class="next" id="next"></div>
+    </div>
+    <div class="card">
+      <h2>Per fag</h2>
+      <div id="list"></div>
+    </div>
+  </section>
+
+  <!-- UKEVISNING -->
+  <section id="uke" class="hidden">
+    <div class="card">
+      <h2>Min timeplan</h2>
+      <div class="scroll"><div class="week" id="week"></div></div>
+    </div>
+  </section>
+
+  <!-- REDIGER TIMEPLAN -->
+  <section id="okter" class="hidden">
+    <div class="card">
+      <h2>Rediger timeplan</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Dag</th><th>Fra</th><th>Til</th><th>Fag</th><th>Rom</th><th>Lærer</th><th></th></tr></thead>
+          <tbody id="oktBody"></tbody>
+        </table>
+      </div>
+      <p style="margin-top:12px"><button class="btn" id="addOkt">+ Legg til time</button></p>
+      <p class="note">Hver time telles som gjennomført når klokka har passert sluttidspunktet, så lenge dagen ikke er en ferie eller fridag.</p>
+    </div>
+  </section>
+
+  <!-- FAG -->
+  <section id="fag" class="hidden">
+    <div class="card">
+      <h2>Fag</h2>
+      <table>
+        <thead><tr><th></th><th>Fag</th><th>Timer/år</th><th></th></tr></thead>
+        <tbody id="fagBody"></tbody>
+      </table>
+      <p style="margin-top:12px"><button class="btn" id="addFag">+ Legg til fag</button></p>
+      <p class="note"><b>Timer/år</b> er årstimene fra læreplanen (60-minutters timer). Prosenten regnes ut fra hvor mange av fagets timer i timeplanen som er gjennomført. Har et fag ingen timer i timeplanen, regnes det ut fra hvor mange skoledager som er gått.</p>
+    </div>
+  </section>
+
+  <!-- SKOLEÅR -->
+  <section id="year" class="hidden">
+    <div class="card">
+      <h2>Skoleår</h2>
+      <div class="grid2">
+        <div><label>Første skoledag</label><input type="date" id="start"></div>
+        <div><label>Siste skoledag</label><input type="date" id="end"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Ferier og fridager</h2>
+      <table>
+        <thead><tr><th>Navn</th><th>Fra</th><th>Til</th><th></th></tr></thead>
+        <tbody id="ferieBody"></tbody>
+      </table>
+      <p style="margin-top:12px"><button class="btn" id="addFerie">+ Legg til ferie / fridag</button></p>
+      <p class="note">Datoene er hentet fra skoleruta til Porsgrunn vgs for 2026/27 (190 skoledager). For en enkelt fridag setter du samme dato i «Fra» og «Til».</p>
+      <p><button class="btn" id="reset">Tilbakestill alt til standard</button></p>
+    </div>
+  </section>
+</main>
+
+<script>
+const KEY = "timeprosent-v5";
+const DAGER = ["Mandag","Tirsdag","Onsdag","Torsdag","Fredag"];
+const COLORS = ["#3d6cc2","#2fb88a","#8a9a2e","#2f9e4f","#c2703d","#a6456e","#6a4fb3","#2b8fa3"];
+
+const DEFAULT = {
+  start: "2026-08-17",
+  end: "2027-06-18",
+  ferier: [
+    {navn:"Høstferie (uke 41)", fra:"2026-10-05", til:"2026-10-09"},
+    {navn:"Juleferie", fra:"2026-12-21", til:"2027-01-04"},
+    {navn:"Vinterferie (uke 8)", fra:"2027-02-22", til:"2027-02-26"},
+    {navn:"Påskeferie", fra:"2027-03-22", til:"2027-03-29"},
+    {navn:"Kristi himmelfartsdag", fra:"2027-05-06", til:"2027-05-06"},
+    {navn:"Fri", fra:"2027-05-07", til:"2027-05-07"},
+    {navn:"17. mai", fra:"2027-05-17", til:"2027-05-17"}
+  ],
+  fag: [
+    {id:"eng", navn:"Engelsk",         farge:COLORS[0], timer:140},
+    {id:"kro", navn:"Kroppsøving vg1", farge:COLORS[1], timer:56},
+    {id:"mat", navn:"Matematikk 1P-Y", farge:COLORS[2], timer:84},
+    {id:"nat", navn:"Naturfag",        farge:COLORS[3], timer:56}
+  ],
+  // dag: 0=mandag ... 4=fredag
+  okter: [
+    {dag:0, fra:"09:50", til:"10:35", fag:"mat", rom:"F103", laerer:"Mona Kristin Holte"},
+    {dag:0, fra:"10:45", til:"11:30", fag:"eng", rom:"F103", laerer:"Frode Apeland"},
+
+    {dag:1, fra:"08:00", til:"08:45", fag:"eng", rom:"F103", laerer:"Frode Apeland"},
+    {dag:1, fra:"08:55", til:"09:40", fag:"eng", rom:"F103", laerer:"Frode Apeland"},
+    {dag:1, fra:"09:50", til:"10:35", fag:"nat", rom:"F103", laerer:"Gunnar Skjervold"},
+    {dag:1, fra:"10:45", til:"11:30", fag:"nat", rom:"F103", laerer:"Gunnar Skjervold"},
+
+    {dag:2, fra:"08:00", til:"08:45", fag:"mat", rom:"F103", laerer:"Mona Kristin Holte"},
+    {dag:2, fra:"08:55", til:"09:40", fag:"mat", rom:"F103", laerer:"Mona Kristin Holte"},
+    {dag:2, fra:"09:50", til:"10:35", fag:"eng", rom:"F103", laerer:"Frode Apeland"},
+    {dag:2, fra:"10:45", til:"11:30", fag:"eng", rom:"F103", laerer:"Frode Apeland"},
+    {dag:2, fra:"13:50", til:"14:35", fag:"kro", rom:"D200", laerer:"Robert Pedersen"},
+    {dag:2, fra:"14:45", til:"15:30", fag:"kro", rom:"D200", laerer:"Robert Pedersen"}
+  ]
+};
+
+let S;
+function load(){
+  try{ const r = localStorage.getItem(KEY); if(r){ S = JSON.parse(r); return; } }catch(e){}
+  S = JSON.parse(JSON.stringify(DEFAULT));
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+// ---------- hjelpere ----------
+function parse(s){ if(!s) return null; const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+function key(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function num(v){ const n = parseFloat(String(v).replace(",", ".")); return isFinite(n) && n>0 ? n : 0; }
+function fmt(n){ return (Math.round(n*10)/10).toLocaleString("nb-NO"); }
+function mins(t){ if(!t) return 0; const [h,m]=t.split(":").map(Number); return h*60+(m||0); }
+function fagById(id){ return S.fag.find(f=>f.id===id); }
+function esc(s){ return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function newId(){ return "f"+Date.now().toString(36)+Math.random().toString(36).slice(2,5); }
+
+function schoolDays(){
+  const start = parse(S.start), end = parse(S.end);
+  if(!start || !end || end < start) return [];
+  const off = new Set();
+  for(const f of S.ferier){
+    const a = parse(f.fra), b = parse(f.til || f.fra);
+    if(!a || !b) continue;
+    for(let d=new Date(a); d<=b; d.setDate(d.getDate()+1)) off.add(key(d));
+  }
+  const days = [];
+  for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+    const wd = d.getDay();
+    if(wd===0 || wd===6 || off.has(key(d))) continue;
+    days.push({date:new Date(d), k:key(d), wd: wd-1});
+  }
+  return days;
+}
+
+// ---------- utregning ----------
+function compute(){
+  const now = new Date(), tk = key(now), nm = now.getHours()*60+now.getMinutes();
+  const days = schoolDays();
+  const per = {}; for(const f of S.fag) per[f.id] = {tot:0, done:0};
+  let next = null, lastLessonEnd = {};
+  for(const o of S.okter){ lastLessonEnd[o.dag] = Math.max(lastLessonEnd[o.dag]||0, mins(o.til)); }
+
+  for(const d of days){
+    for(const o of S.okter){
+      if(o.dag !== d.wd || !per[o.fag]) continue;
+      per[o.fag].tot++;
+      const passed = d.k < tk || (d.k === tk && nm >= mins(o.til));
+      if(passed) per[o.fag].done++;
+      else if(!next || d.k < next.k || (d.k === next.k && mins(o.fra) < mins(next.o.fra))) next = {k:d.k, date:d.date, o};
+    }
+  }
+  const daysPast = days.filter(d => d.k < tk || (d.k === tk && nm >= (lastLessonEnd[d.wd] ?? 15*60))).length;
+  const dayFrac = days.length ? daysPast/days.length : 0;
+
+  const res = S.fag.map(f => {
+    const p = per[f.id];
+    const frac = p.tot ? p.done/p.tot : dayFrac;
+    const tot = num(f.timer);
+    return {f, tot, done: frac*tot, frac, okt:p};
+  });
+  return {res, daysLeft: days.length - daysPast, next};
+}
+
+// ---------- visning ----------
+function renderView(){
+  const n = new Date();
+  document.getElementById("today").textContent =
+    "I dag: " + n.toLocaleDateString("nb-NO",{weekday:"long", day:"numeric", month:"long", year:"numeric"});
+  const {res, daysLeft, next} = compute();
+  const T = res.reduce((a,r)=>a+r.tot,0), D = res.reduce((a,r)=>a+r.done,0);
+  const yp = T ? D/T*100 : 0;
+  document.getElementById("yearPct").textContent = fmt(yp)+" %";
+  document.getElementById("yearDone").textContent = fmt(D);
+  document.getElementById("yearLeft").textContent = fmt(T-D);
+  document.getElementById("daysLeft").textContent = daysLeft;
+  document.getElementById("yearBar").style.width = Math.min(100,yp)+"%";
+
+  const nx = document.getElementById("next");
+  if(next){
+    const f = fagById(next.o.fag);
+    const isToday = next.k === key(n);
+    const dag = isToday ? "i dag" : next.date.toLocaleDateString("nb-NO",{weekday:"long", day:"numeric", month:"long"});
+    nx.innerHTML = `Neste time: <b>${esc(f?f.navn:"")}</b> ${esc(dag)} kl. ${esc(next.o.fra)}–${esc(next.o.til)}${next.o.rom?" i "+esc(next.o.rom):""}`;
+  } else nx.textContent = "Ingen flere timer dette skoleåret.";
+
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  if(!res.length){ list.innerHTML = '<p class="meta">Ingen fag ennå.</p>'; return; }
+  for(const r of res){
+    const p = r.frac*100;
+    const el = document.createElement("div");
+    el.className = "subj";
+    const okt = r.okt.tot ? ` · ${r.okt.done} av ${r.okt.tot} økter` : " · beregnet ut fra skoledager";
+    el.innerHTML = `
+      <div class="row"><span class="name">${esc(r.f.navn || "Uten navn")}</span><span class="pct">${fmt(p)} %</span></div>
+      <div class="bar"><div style="width:${Math.min(100,p)}%;background:${esc(r.f.farge)}"></div></div>
+      <div class="meta">${fmt(r.done)} av ${fmt(r.tot)} timer gått · ${fmt(r.tot-r.done)} igjen${okt}</div>`;
+    list.appendChild(el);
+  }
+}
+
+function renderWeek(){
+  const w = document.getElementById("week");
+  w.innerHTML = "";
+  const now = new Date(), wdNow = now.getDay()-1, nm = now.getHours()*60+now.getMinutes();
+  DAGER.forEach((navn, i) => {
+    const col = document.createElement("div");
+    col.className = "day" + (i===wdNow ? " today" : "");
+    col.innerHTML = `<h3>${navn}</h3>`;
+    const ok = S.okter.filter(o=>o.dag===i).sort((a,b)=>mins(a.fra)-mins(b.fra));
+    if(!ok.length) col.innerHTML += '<div class="empty">Ingen timer</div>';
+    for(const o of ok){
+      const f = fagById(o.fag) || {navn:"?", farge:"#999"};
+      const done = i < wdNow || (i===wdNow && nm >= mins(o.til));
+      col.innerHTML += `<div class="lesson${done?" done":""}" style="border-left-color:${esc(f.farge)}">
+        <small>${esc(o.fra)}–${esc(o.til)}${o.rom?" · "+esc(o.rom):""}</small>
+        <b>${esc(f.navn)}</b>
+        ${o.laerer?`<small>${esc(o.laerer)}</small>`:""}
+      </div>`;
+    }
+    w.appendChild(col);
+  });
+}
+
+function renderOkter(){
+  const tb = document.getElementById("oktBody");
+  tb.innerHTML = "";
+  const order = S.okter.map((o,i)=>i).sort((a,b)=> S.okter[a].dag-S.okter[b].dag || mins(S.okter[a].fra)-mins(S.okter[b].fra));
+  for(const i of order){
+    const o = S.okter[i];
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><select>${DAGER.map((d,k)=>`<option value="${k}">${d}</option>`).join("")}</select></td>
+      <td><input type="time"></td><td><input type="time"></td>
+      <td><select>${S.fag.map(f=>`<option value="${esc(f.id)}">${esc(f.navn)}</option>`).join("")}</select></td>
+      <td><input type="text" style="width:80px"></td>
+      <td><input type="text"></td>
+      <td><button class="x" title="Fjern">×</button></td>`;
+    const [dag, fagSel] = tr.querySelectorAll("select");
+    const [fra, til, rom, laerer] = tr.querySelectorAll("input");
+    dag.value = o.dag; fagSel.value = o.fag; fra.value = o.fra; til.value = o.til; rom.value = o.rom||""; laerer.value = o.laerer||"";
+    dag.onchange = e => { o.dag = +e.target.value; save(); };
+    fagSel.onchange = e => { o.fag = e.target.value; save(); };
+    fra.onchange = e => { o.fra = e.target.value; save(); };
+    til.onchange = e => { o.til = e.target.value; save(); };
+    rom.oninput = e => { o.rom = e.target.value; save(); };
+    laerer.oninput = e => { o.laerer = e.target.value; save(); };
+    tr.querySelector(".x").onclick = () => { S.okter.splice(i,1); save(); renderOkter(); };
+    tb.appendChild(tr);
+  }
+}
+
+function renderFag(){
+  const tb = document.getElementById("fagBody");
+  tb.innerHTML = "";
+  S.fag.forEach((f,i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><input type="color"></td>
+      <td><input type="text" placeholder="Fagnavn"></td>
+      <td><input class="num" inputmode="decimal"></td>
+      <td><button class="x" title="Fjern">×</button></td>`;
+    const [col, name, tot] = tr.querySelectorAll("input");
+    col.value = f.farge; name.value = f.navn; tot.value = f.timer ? String(f.timer).replace(".", ",") : "";
+    col.oninput = e => { f.farge = e.target.value; save(); };
+    name.oninput = e => { f.navn = e.target.value; save(); };
+    tot.oninput = e => { f.timer = num(e.target.value); save(); };
+    tr.querySelector(".x").onclick = () => {
+      S.okter = S.okter.filter(o=>o.fag!==f.id);
+      S.fag.splice(i,1); save(); renderFag();
+    };
+    tb.appendChild(tr);
+  });
+}
+
+function renderYear(){
+  document.getElementById("start").value = S.start;
+  document.getElementById("end").value = S.end;
+  const tb = document.getElementById("ferieBody");
+  tb.innerHTML = "";
+  S.ferier.forEach((f,i)=>{
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td><input type="text" placeholder="Navn"></td>
+      <td><input type="date"></td><td><input type="date"></td>
+      <td><button class="x" title="Fjern">×</button></td>`;
+    const [n,a,b] = tr.querySelectorAll("input");
+    n.value = f.navn; a.value = f.fra; b.value = f.til;
+    n.oninput = e => { f.navn = e.target.value; save(); };
+    a.onchange = e => { f.fra = e.target.value; if(!f.til || f.til < f.fra){ f.til = f.fra; b.value = f.fra; } save(); };
+    b.onchange = e => { f.til = e.target.value; save(); };
+    tr.querySelector(".x").onclick = () => { S.ferier.splice(i,1); save(); renderYear(); };
+    tb.appendChild(tr);
+  });
+}
+
+const RENDER = {view:renderView, uke:renderWeek, okter:renderOkter, fag:renderFag, year:renderYear};
+let current = "view";
+function show(which){
+  current = which;
+  document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on", b.dataset.tab===which));
+  for(const id in RENDER) document.getElementById(id).classList.toggle("hidden", id!==which);
+  RENDER[which]();
+}
+document.querySelectorAll(".tabs button").forEach(b=> b.onclick = () => show(b.dataset.tab));
+
+document.getElementById("addOkt").onclick = () => {
+  if(!S.fag.length) return;
+  S.okter.push({dag:0, fra:"08:00", til:"08:45", fag:S.fag[0].id, rom:"", laerer:""});
+  save(); renderOkter();
+};
+document.getElementById("addFag").onclick = () => {
+  S.fag.push({id:newId(), navn:"", farge:COLORS[S.fag.length % COLORS.length], timer:0});
+  save(); renderFag();
+  const ins = document.querySelectorAll('#fagBody input[type=text]'); ins[ins.length-1].focus();
+};
+document.getElementById("addFerie").onclick = () => { S.ferier.push({navn:"", fra:"", til:""}); save(); renderYear(); };
+document.getElementById("start").onchange = e => { S.start = e.target.value; save(); };
+document.getElementById("end").onchange = e => { S.end = e.target.value; save(); };
+let confirmReset = false;
+document.getElementById("reset").onclick = e => {
+  if(!confirmReset){ confirmReset = true; e.target.textContent = "Klikk igjen for å bekrefte"; setTimeout(()=>{confirmReset=false; e.target.textContent="Tilbakestill alt til standard";},3000); return; }
+  S = JSON.parse(JSON.stringify(DEFAULT)); save(); renderYear(); confirmReset=false; e.target.textContent="Tilbakestill alt til standard";
+};
+
+load();
+show("view");
+setInterval(()=>{ if(current==="view" || current==="uke") RENDER[current](); }, 30000);
+</script>
+</body>
+</html>
