@@ -58,7 +58,14 @@
   .lesson b{display:block;font-size:14px}
   .lesson small{display:block;color:var(--muted);font-size:12px}
   .empty{color:var(--muted);font-size:13px;font-style:italic}
-  @media (max-width:560px){ .grid2{grid-template-columns:1fr} }
+  .bar.thin{height:6px;margin:6px 0 4px}
+  .status{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600}
+  .ok{background:#e3f3ea;color:#1f6b43} .warn{background:#fbf0d9;color:#8a5a00} .bad{background:#fbe3e0;color:#9b2c22}
+  @media (prefers-color-scheme: dark){ .ok{background:#1d3a2b;color:#8fdcb0} .warn{background:#3d321b;color:#f0c46a} .bad{background:#43221f;color:#f2a39a} }
+  .fline{margin-top:8px;font-size:13px}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:end}
+  td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+  @media (max-width:560px){ .grid2,.grid4{grid-template-columns:1fr} }
 </style>
 </head>
 <body>
@@ -69,6 +76,7 @@
   <div class="tabs">
     <button data-tab="view" class="on">Oversikt</button>
     <button data-tab="uke">Timeplan</button>
+    <button data-tab="frav">Fravær</button>
     <button data-tab="okter">Rediger timeplan</button>
     <button data-tab="fag">Fag</button>
     <button data-tab="year">Skoleår og ferier</button>
@@ -83,6 +91,7 @@
         <div><b id="yearPct">–</b><span>av alle timer gått</span></div>
         <div><b id="yearDone">–</b><span>timer gjennomført</span></div>
         <div><b id="yearLeft">–</b><span>timer igjen</span></div>
+        <div><b id="oktLeft">–</b><span>skoletimer (økter) igjen</span></div>
         <div><b id="daysLeft">–</b><span>skoledager igjen</span></div>
       </div>
       <div class="next" id="next"></div>
@@ -98,6 +107,45 @@
     <div class="card">
       <h2>Min timeplan</h2>
       <div class="scroll"><div class="week" id="week"></div></div>
+    </div>
+  </section>
+
+  <!-- FRAVÆR -->
+  <section id="frav" class="hidden">
+    <div class="card">
+      <h2>Fravær per fag</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Fag</th><th class="r">Fravær</th><th class="r">% av årstimer</th><th class="r">% hittil</th><th class="r">Grense (10 %)</th><th class="r">Igjen til grensen</th><th></th></tr></thead>
+          <tbody id="fravSum"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Registrer fravær</h2>
+      <div class="grid4">
+        <div><label>Dato</label><input type="date" id="fDato"></div>
+        <div><label>Fag</label><select id="fFag"></select></div>
+        <div id="fMinWrap"><label>Minutter</label><input id="fMin" inputmode="numeric" value="45"></div>
+        <div><label>Type</label>
+          <select id="fType">
+            <option value="teller">Egenmelding / udokumentert (teller)</option>
+            <option value="unntatt">Dokumentert – unntatt grensen</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-top:12px"><label>Kommentar (valgfritt)</label><input id="fKom" placeholder="F.eks. syk, tannlege, begravelse"></div>
+      <p style="margin-top:12px"><button class="btn" id="fAdd">Registrer</button> <span class="meta" id="fMsg"></span></p>
+    </div>
+    <div class="card">
+      <h2>Registrert fravær</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Dato</th><th>Fag</th><th class="r">Min</th><th>Type</th><th>Kommentar</th><th></th></tr></thead>
+          <tbody id="fravList"></tbody>
+        </table>
+      </div>
+      <p class="note">Hovedregelen er at du ikke får standpunktkarakter eller halvårsvurdering med karakter i et fag hvis fraværet er over 10 % av årstimetallet. Egenmeldt helserelatert fravær og udokumentert fravær teller sammen. Noe dokumentert fravær kan unntas, og rektor kan i noen tilfeller gi karakter opp til 15 %. Sjekk alltid med skolen og fraværet i InSchool – denne siden er bare en oversikt for deg selv.</p>
     </div>
   </section>
 
@@ -175,6 +223,7 @@ const DEFAULT = {
     {id:"nat", navn:"Naturfag",        farge:COLORS[3], timer:56}
   ],
   // dag: 0=mandag ... 4=fredag
+  fravaer: [],
   okter: [
     {dag:0, fra:"09:50", til:"10:35", fag:"mat", rom:"F103", laerer:"Mona Kristin Holte"},
     {dag:0, fra:"10:45", til:"11:30", fag:"eng", rom:"F103", laerer:"Frode Apeland"},
@@ -195,8 +244,9 @@ const DEFAULT = {
 
 let S;
 function load(){
-  try{ const r = localStorage.getItem(KEY); if(r){ S = JSON.parse(r); return; } }catch(e){}
-  S = JSON.parse(JSON.stringify(DEFAULT));
+  try{ const r = localStorage.getItem(KEY); if(r){ S = JSON.parse(r); } }catch(e){}
+  if(!S) S = JSON.parse(JSON.stringify(DEFAULT));
+  if(!Array.isArray(S.fravaer)) S.fravaer = [];
 }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 
@@ -248,11 +298,18 @@ function compute(){
   const daysPast = days.filter(d => d.k < tk || (d.k === tk && nm >= (lastLessonEnd[d.wd] ?? 15*60))).length;
   const dayFrac = days.length ? daysPast/days.length : 0;
 
+  const fr = {}; for(const f of S.fag) fr[f.id] = {teller:0, unntatt:0};
+  for(const a of S.fravaer){ if(fr[a.fag]) fr[a.fag][a.type==="unntatt"?"unntatt":"teller"] += num(a.min); }
   const res = S.fag.map(f => {
     const p = per[f.id];
     const frac = p.tot ? p.done/p.tot : dayFrac;
     const tot = num(f.timer);
-    return {f, tot, done: frac*tot, frac, okt:p};
+    const done = frac*tot;
+    const fh = fr[f.id].teller/60;             // fraværstimer som teller
+    const grense = tot*0.10;                    // timer
+    return {f, tot, done, frac, okt:p,
+      frav:{timer:fh, unntatt:fr[f.id].unntatt/60, pct: tot? fh/tot*100 : 0, pctHittil: done? fh/done*100 : 0,
+            grense, igjen: grense-fh, igjenOkter: Math.floor(((grense-fh)*60)/45 + 1e-9)}};
   });
   return {res, daysLeft: days.length - daysPast, next};
 }
@@ -269,6 +326,7 @@ function renderView(){
   document.getElementById("yearDone").textContent = fmt(D);
   document.getElementById("yearLeft").textContent = fmt(T-D);
   document.getElementById("daysLeft").textContent = daysLeft;
+  document.getElementById("oktLeft").textContent = res.reduce((a,r)=>a+(r.okt.tot-r.okt.done),0);
   document.getElementById("yearBar").style.width = Math.min(100,yp)+"%";
 
   const nx = document.getElementById("next");
@@ -290,8 +348,59 @@ function renderView(){
     el.innerHTML = `
       <div class="row"><span class="name">${esc(r.f.navn || "Uten navn")}</span><span class="pct">${fmt(p)} %</span></div>
       <div class="bar"><div style="width:${Math.min(100,p)}%;background:${esc(r.f.farge)}"></div></div>
-      <div class="meta">${fmt(r.done)} av ${fmt(r.tot)} timer gått · ${fmt(r.tot-r.done)} igjen${okt}</div>`;
+      <div class="meta">${fmt(r.done)} av ${fmt(r.tot)} timer gått · ${fmt(r.tot-r.done)} igjen${okt}${r.okt.tot?` · ${r.okt.tot-r.okt.done} økter igjen`:""}</div>
+      <div class="fline">${statusTag(r.frav)} Fravær ${fmt(r.frav.timer)} t (${fmt(r.frav.pct)} % av årstimer) · ${igjenTekst(r.frav)}</div>
+      <div class="bar thin"><div style="width:${Math.min(100, r.frav.grense? r.frav.timer/r.frav.grense*100 : 0)}%;background:${barCol(r.frav)}"></div></div>`;
     list.appendChild(el);
+  }
+}
+
+function statusTag(f){
+  const c = f.pct > 10 ? "bad" : f.pct >= 7 ? "warn" : "ok";
+  const t = f.pct > 10 ? "Over grensen" : f.pct >= 7 ? "Nær grensen" : "OK";
+  return `<span class="status ${c}">${t}</span>`;
+}
+function barCol(f){ return f.pct > 10 ? "var(--danger)" : f.pct >= 7 ? "#d39a1f" : "var(--accent)"; }
+function igjenTekst(f){
+  if(f.igjen < 0) return `${fmt(-f.igjen)} t over 10 %-grensen`;
+  return `${fmt(f.igjen)} t igjen til grensen (≈ ${f.igjenOkter} økter à 45 min)`;
+}
+
+function renderFrav(){
+  const {res} = compute();
+  const sum = document.getElementById("fravSum");
+  sum.innerHTML = "";
+  for(const r of res){
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${esc(r.f.navn)}</td>
+      <td class="r">${fmt(r.frav.timer)} t${r.frav.unntatt?`<br><small class="meta">+${fmt(r.frav.unntatt)} t unntatt</small>`:""}</td>
+      <td class="r">${fmt(r.frav.pct)} %</td>
+      <td class="r">${fmt(r.frav.pctHittil)} %</td>
+      <td class="r">${fmt(r.frav.grense)} t</td>
+      <td class="r">${r.frav.igjen<0 ? fmt(-r.frav.igjen)+" t over" : fmt(r.frav.igjen)+" t<br><small class=\"meta\">≈ "+r.frav.igjenOkter+" økter</small>"}</td>
+      <td>${statusTag(r.frav)}</td>`;
+    sum.appendChild(tr);
+  }
+  const sel = document.getElementById("fFag");
+  const prev = sel.value;
+  sel.innerHTML = `<option value="__dag">Hele dagen (alle timer)</option>` + S.fag.map(f=>`<option value="${esc(f.id)}">${esc(f.navn)}</option>`).join("");
+  sel.value = prev || (S.fag[0] ? S.fag[0].id : "__dag");
+  document.getElementById("fMinWrap").style.visibility = sel.value==="__dag" ? "hidden" : "visible";
+  const d = document.getElementById("fDato"); if(!d.value) d.value = key(new Date());
+
+  const list = document.getElementById("fravList");
+  list.innerHTML = "";
+  const order = S.fravaer.map((a,i)=>i).sort((a,b)=> S.fravaer[b].dato.localeCompare(S.fravaer[a].dato));
+  if(!order.length) list.innerHTML = '<tr><td colspan="6" class="meta">Ingen fravær registrert.</td></tr>';
+  for(const i of order){
+    const a = S.fravaer[i], f = fagById(a.fag);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${esc(parse(a.dato).toLocaleDateString("nb-NO",{weekday:"short", day:"numeric", month:"short"}))}</td>
+      <td>${esc(f?f.navn:"(slettet fag)")}</td><td class="r">${fmt(num(a.min))}</td>
+      <td>${a.type==="unntatt"?"Unntatt":"Teller"}</td><td>${esc(a.kom||"")}</td>
+      <td><button class="x" title="Fjern">×</button></td>`;
+    tr.querySelector(".x").onclick = () => { S.fravaer.splice(i,1); save(); renderFrav(); };
+    list.appendChild(tr);
   }
 }
 
@@ -388,7 +497,7 @@ function renderYear(){
   });
 }
 
-const RENDER = {view:renderView, uke:renderWeek, okter:renderOkter, fag:renderFag, year:renderYear};
+const RENDER = {view:renderView, uke:renderWeek, frav:renderFrav, okter:renderOkter, fag:renderFag, year:renderYear};
 let current = "view";
 function show(which){
   current = which;
@@ -398,6 +507,31 @@ function show(which){
 }
 document.querySelectorAll(".tabs button").forEach(b=> b.onclick = () => show(b.dataset.tab));
 
+document.getElementById("fFag").onchange = e => {
+  document.getElementById("fMinWrap").style.visibility = e.target.value==="__dag" ? "hidden" : "visible";
+};
+document.getElementById("fAdd").onclick = () => {
+  const dato = document.getElementById("fDato").value;
+  const fag = document.getElementById("fFag").value;
+  const type = document.getElementById("fType").value;
+  const kom = document.getElementById("fKom").value.trim();
+  const msg = document.getElementById("fMsg");
+  if(!dato){ msg.textContent = "Velg en dato."; return; }
+  if(fag === "__dag"){
+    const wd = parse(dato).getDay()-1;
+    const ok = S.okter.filter(o=>o.dag===wd);
+    if(!ok.length){ msg.textContent = "Du har ingen timer i timeplanen den dagen."; return; }
+    for(const o of ok) S.fravaer.push({dato, fag:o.fag, min: Math.max(0, mins(o.til)-mins(o.fra)), type, kom});
+    msg.textContent = `Registrerte ${ok.length} timer.`;
+  } else {
+    const m = num(document.getElementById("fMin").value);
+    if(!m){ msg.textContent = "Skriv antall minutter."; return; }
+    S.fravaer.push({dato, fag, min:m, type, kom});
+    msg.textContent = "Registrert.";
+  }
+  document.getElementById("fKom").value = "";
+  save(); renderFrav();
+};
 document.getElementById("addOkt").onclick = () => {
   if(!S.fag.length) return;
   S.okter.push({dag:0, fra:"08:00", til:"08:45", fag:S.fag[0].id, rom:"", laerer:""});
